@@ -3,7 +3,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtWebEngineWidgets import *
 from PyQt5.QtGui import QIcon
-import requests  # For using an API to summarize text
+import requests  # For using an API to summarize text and perform sentiment analysis
 
 class Browser(QMainWindow):
     def __init__(self):
@@ -77,6 +77,14 @@ class Browser(QMainWindow):
         self.summarizer_btn.triggered.connect(self.summarize_text)
         nav_bar.addAction(self.summarizer_btn)
 
+        # Sentiment Analysis Tab
+        self.sentiment_btn = QAction('Analyze Sentiment', self)
+        self.sentiment_btn.triggered.connect(self.analyze_sentiment)
+        nav_bar.addAction(self.sentiment_btn)
+
+        # Connect loadFinished to apply dark mode after the page is fully loaded
+        self.browser.loadFinished.connect(self.apply_dark_mode)
+
     def navigate_home(self):
         self.browser.setUrl(QUrl("https://www.google.com"))
 
@@ -131,32 +139,37 @@ class Browser(QMainWindow):
         summarize_action.triggered.connect(self.summarize_text)
         menu.addAction(summarize_action)
 
+        sentiment_action = QAction("Analyze Sentiment", self)
+        sentiment_action.triggered.connect(self.analyze_sentiment)
+        menu.addAction(sentiment_action)
+
         menu.exec_(self.browser.mapToGlobal(point))
 
     def toggle_dark_mode(self):
+        self.dark_mode_enabled = not self.dark_mode_enabled
+        self.apply_dark_mode()
+
+    def apply_dark_mode(self):
         if self.dark_mode_enabled:
-            self.browser.page().runJavaScript("""
-                document.body.style.backgroundColor = '';
-                document.body.style.color = '';
-                let elems = document.querySelectorAll('*');
-                elems.forEach(e => {
-                    e.style.backgroundColor = '';
-                    e.style.color = '';
-                });
-            """)
-            self.setStyleSheet("")
-        else:
             self.browser.page().runJavaScript("""
                 document.body.style.backgroundColor = '#121212';
                 document.body.style.color = '#e0e0e0';
-                let elems = document.querySelectorAll('*');
-                elems.forEach(e => {
+                document.querySelectorAll('*').forEach(e => {
                     e.style.backgroundColor = '#121212';
                     e.style.color = '#e0e0e0';
                 });
             """)
             self.setStyleSheet("background-color: #121212; color: #e0e0e0;")
-        self.dark_mode_enabled = self.dark_mode_enabled
+        else:
+            self.browser.page().runJavaScript("""
+                document.body.style.backgroundColor = '';
+                document.body.style.color = '';
+                document.querySelectorAll('*').forEach(e => {
+                    e.style.backgroundColor = '';
+                    e.style.color = '';
+                });
+            """)
+            self.setStyleSheet("")
 
     def download_requested(self, item):
         path, _ = QFileDialog.getSaveFileName(self, "Save File", item.suggestedFileName())
@@ -172,25 +185,84 @@ class Browser(QMainWindow):
     def display_summary(self, selected_text):
         if selected_text.strip():
             summary = self.summarize_via_api(selected_text)
-            summary_tab = QTabWidget(self)
-            summary_tab.addTab(QLabel(summary), "Summary")
-            self.setCentralWidget(summary_tab)
+            summary_dialog = QDialog(self)
+            summary_dialog.setWindowTitle("Summary")
+            summary_dialog.setGeometry(300, 300, 400, 300)
+
+            layout = QVBoxLayout()
+            summary_label = QLabel(summary)
+            summary_label.setWordWrap(True)
+
+            layout.addWidget(summary_label)
+            summary_dialog.setLayout(layout)
+
+            summary_dialog.exec_()
         else:
             QMessageBox.warning(self, "No Text Selected", "Please select text to summarize.")
 
     def summarize_via_api(self, text):
         # Replace this with your API key and endpoint
-        api_url = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn",
+        api_url = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
         api_key = "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"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        data = {"text": text}
+        headers = {"Authorization": f"Bearer {api_key}"}
+        data = {"inputs": text}
+
         response = requests.post(api_url, json=data, headers=headers)
+
         if response.status_code == 200:
-            return response.json().get("summary", "No summary available.")
+            response_data = response.json()
+            if isinstance(response_data, list) and len(response_data) > 0:
+                return response_data[0].get("summary_text", "No summary available.")
+            else:
+                return "No summary available."
         else:
-            return "Error: Unable to summarize text."
+            return f"Error: Unable to summarize text. Status code: {response.status_code}"
+
+    def analyze_sentiment(self):
+        self.browser.page().runJavaScript("window.getSelection().toString();", self.display_sentiment)
+
+    def display_sentiment(self, selected_text):
+        if selected_text.strip():
+            sentiment = self.sentiment_via_api(selected_text)
+            sentiment_dialog = QDialog(self)
+            sentiment_dialog.setWindowTitle("Sentiment Analysis")
+            sentiment_dialog.setGeometry(300, 300, 400, 200)
+
+            layout = QVBoxLayout()
+            sentiment_label = QLabel(sentiment)
+            sentiment_label.setWordWrap(True)
+
+            layout.addWidget(sentiment_label)
+            sentiment_dialog.setLayout(layout)
+
+            sentiment_dialog.exec_()
+        else:
+            QMessageBox.warning(self, "No Text Selected", "Please select text to analyze sentiment.")
+
+    def sentiment_via_api(self, text):
+        # Replace this with your API key and endpoint
+        api_url = "https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base"
+        api_key = "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"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        data = {"inputs": text}
+
+        response = requests.post(api_url, json=data, headers=headers)
+
+        if response.status_code == 200:
+            response_data = response.json()
+            if isinstance(response_data, list) and len(response_data) > 0:
+                first_entry = response_data[0]
+                if isinstance(first_entry, dict):
+                    sentiment_label = first_entry.get("label", "Neutral")
+                    return f"Sentiment: {sentiment_label}"
+                else:
+                    return "No sentiment analysis available."
+            else:
+                return "No sentiment analysis available."
+        else:
+            return f"Error: Unable to analyze sentiment. Status code: {response.status_code}"
 
 app = QApplication(sys.argv)
-QApplication.setApplicationName('Browser')
+QApplication.setApplicationName("Skibidi Browser")
 window = Browser()
 app.exec_()
