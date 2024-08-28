@@ -3,7 +3,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtWebEngineWidgets import *
 from PyQt5.QtGui import QIcon
-import requests  # For using an API to summarize text and perform sentiment analysis
+import requests  # For using an API to summarize text, detect emotion, and perform fact-checking
 
 class Browser(QMainWindow):
     def __init__(self):
@@ -77,10 +77,15 @@ class Browser(QMainWindow):
         self.summarizer_btn.triggered.connect(self.summarize_text)
         nav_bar.addAction(self.summarizer_btn)
 
-        # Sentiment Analysis Tab
-        self.sentiment_btn = QAction('Analyze Sentiment', self)
-        self.sentiment_btn.triggered.connect(self.analyze_sentiment)
-        nav_bar.addAction(self.sentiment_btn)
+        # Emotion Detection Tab (Replaces Sentiment Analysis)
+        self.emotion_btn = QAction('Detect Emotion', self)
+        self.emotion_btn.triggered.connect(self.detect_emotion)
+        nav_bar.addAction(self.emotion_btn)
+
+        # Fact-Checking Tab
+        self.fact_check_btn = QAction('Fact-Check', self)
+        self.fact_check_btn.triggered.connect(self.fact_check_text)
+        nav_bar.addAction(self.fact_check_btn)
 
         # Connect loadFinished to apply dark mode after the page is fully loaded
         self.browser.loadFinished.connect(self.apply_dark_mode)
@@ -139,9 +144,13 @@ class Browser(QMainWindow):
         summarize_action.triggered.connect(self.summarize_text)
         menu.addAction(summarize_action)
 
-        sentiment_action = QAction("Analyze Sentiment", self)
-        sentiment_action.triggered.connect(self.analyze_sentiment)
-        menu.addAction(sentiment_action)
+        emotion_action = QAction("Detect Emotion", self)
+        emotion_action.triggered.connect(self.detect_emotion)
+        menu.addAction(emotion_action)
+
+        fact_check_action = QAction("Fact-Check", self)
+        fact_check_action.triggered.connect(self.fact_check)
+        menu.addAction(fact_check_action)
 
         menu.exec_(self.browser.mapToGlobal(point))
 
@@ -218,28 +227,28 @@ class Browser(QMainWindow):
         else:
             return f"Error: Unable to summarize text. Status code: {response.status_code}"
 
-    def analyze_sentiment(self):
-        self.browser.page().runJavaScript("window.getSelection().toString();", self.display_sentiment)
+    def detect_emotion(self):
+        self.browser.page().runJavaScript("window.getSelection().toString();", self.display_emotion)
 
-    def display_sentiment(self, selected_text):
+    def display_emotion(self, selected_text):
         if selected_text.strip():
-            sentiment = self.sentiment_via_api(selected_text)
-            sentiment_dialog = QDialog(self)
-            sentiment_dialog.setWindowTitle("Sentiment Analysis")
-            sentiment_dialog.setGeometry(300, 300, 400, 200)
+            emotion = self.emotion_via_api(selected_text)
+            emotion_dialog = QDialog(self)
+            emotion_dialog.setWindowTitle("Emotion Detection")
+            emotion_dialog.setGeometry(300, 300, 400, 200)
 
             layout = QVBoxLayout()
-            sentiment_label = QLabel(sentiment)
-            sentiment_label.setWordWrap(True)
+            emotion_label = QLabel(emotion)
+            emotion_label.setWordWrap(True)
 
-            layout.addWidget(sentiment_label)
-            sentiment_dialog.setLayout(layout)
+            layout.addWidget(emotion_label)
+            emotion_dialog.setLayout(layout)
 
-            sentiment_dialog.exec_()
+            emotion_dialog.exec_()
         else:
-            QMessageBox.warning(self, "No Text Selected", "Please select text to analyze sentiment.")
+            QMessageBox.warning(self, "No Text Selected", "Please select text to detect emotion.")
 
-    def sentiment_via_api(self, text):
+    def emotion_via_api(self, text):
         # Replace this with your API key and endpoint
         api_url = "https://api-inference.huggingface.co/models/j-hartmann/emotion-english-distilroberta-base"
         api_key = "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"
@@ -251,18 +260,56 @@ class Browser(QMainWindow):
         if response.status_code == 200:
             response_data = response.json()
             if isinstance(response_data, list) and len(response_data) > 0:
-                first_entry = response_data[0]
-                if isinstance(first_entry, dict):
-                    sentiment_label = first_entry.get("label", "Neutral")
-                    return f"Sentiment: {sentiment_label}"
-                else:
-                    return "No sentiment analysis available."
+                emotions = response_data[0].get("label", "No emotion detected.")
+                return f"Detected Emotion: {emotions}"
             else:
-                return "No sentiment analysis available."
+                return "No emotion detected."
         else:
-            return f"Error: Unable to analyze sentiment. Status code: {response.status_code}"
+            return f"Error: Unable to detect emotion. Status code: {response.status_code}"
 
-app = QApplication(sys.argv)
-QApplication.setApplicationName("Skibidi Browser")
-window = Browser()
-app.exec_()
+    def fact_check_text(self):
+        self.browser.page().runJavaScript("window.getSelection().toString();", self.display_fact_check)
+
+    def display_fact_check(self, selected_text):
+        if selected_text.strip():
+            fact_check_result = self.fact_check_via_api(selected_text)
+            fact_check_dialog = QDialog(self)
+            fact_check_dialog.setWindowTitle("Fact Check")
+            fact_check_dialog.setGeometry(300, 300, 400, 300)
+
+            layout = QVBoxLayout()
+            fact_check_label = QLabel(fact_check_result)
+            fact_check_label.setWordWrap(True)
+
+            layout.addWidget(fact_check_label)
+            fact_check_dialog.setLayout(layout)
+
+            fact_check_dialog.exec_()
+        else:
+            QMessageBox.warning(self, "No Text Selected", "Please select text to fact-check.")
+
+    def fact_check_via_api(self, text):
+        # Replace this with your API key and endpoint
+        api_url = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
+        api_key = "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"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        data = {"inputs": text, "candidate_labels": ["true", "false"]}
+
+        response = requests.post(api_url, json=data, headers=headers)
+
+        if response.status_code == 200:
+            response_data = response.json()
+            if "labels" in response_data and len(response_data["labels"]) > 0:
+                label = response_data["labels"][0]
+                score = response_data["scores"][0]
+                return f"Fact Check: {label.capitalize()} (Confidence: {score:.2f})"
+            else:
+                return "Unable to fact-check."
+        else:
+            return f"Error: Unable to fact-check text. Status code: {response.status_code}"
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    QApplication.setApplicationName("Skibidi Web Browser")
+    window = Browser()
+    app.exec_()
