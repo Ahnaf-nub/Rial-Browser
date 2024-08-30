@@ -1,4 +1,4 @@
-Rial Browser
+# Rial Browser
 Rial Browser is a feature-rich web browser built using PyQt5 and QtWebEngine. Designed with simplicity and efficiency in mind, this browser offers a modern user experience with essential tools for seamless web navigation.
 
 ## Features
