@@ -52,13 +52,9 @@ class Browser(QMainWindow):
         history_btn.triggered.connect(self.show_history)
         nav_bar.addAction(history_btn)
 
-        # Download Manager
-        self.browser.page().profile().downloadRequested.connect(self.download_requested)
-
         # History and Bookmarks
         self.history = []
         self.bookmarks = []
-        self.downloads = []
 
         # Custom Context Menu
         self.browser.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -158,14 +154,6 @@ class Browser(QMainWindow):
             """)
             self.setStyleSheet("")
 
-    def download_requested(self, item):
-        path, _ = QFileDialog.getSaveFileName(self, "Save File", item.suggestedFileName())
-        if path:
-            item.setPath(path)
-            item.accept()
-            self.downloads.append(item)
-            item.finished.connect(lambda: QMessageBox.information(self, "Download Finished", f"Downloaded: {path}"))
-
     def summarize_text(self):
         self.browser.page().runJavaScript("window.getSelection().toString();", self.display_summary)
 
@@ -236,22 +224,14 @@ class Browser(QMainWindow):
 
         if response.status_code == 200:
             response_data = response.json()
-            
-            # If response_data is a list of lists, extract the inner list
-            if isinstance(response_data, list) and isinstance(response_data[0], list):
-                response_data = response_data[0]
-            
-            if isinstance(response_data, list) and response_data:
-                # Assume each item in response_data is a dictionary with 'label' and 'score'
-                highest_score_emotion = max(response_data, key=lambda x: x['score'])
-                return highest_score_emotion['label']
+            if isinstance(response_data, list) and len(response_data) > 0:
+                return response_data[0].get("label", "No emotion detected.")
             else:
                 return "No emotion detected."
         else:
             return f"Error: Unable to detect emotion. Status code: {response.status_code}"
 
-
 app = QApplication(sys.argv)
-QApplication.setApplicationName("Rial Browser")
+QApplication.setApplicationName("My Browser")
 window = Browser()
 app.exec_()
